@@ -5,10 +5,11 @@ from typing import Literal, Annotated
 import pickle
 import pandas as pd
 
-with open('model.pkl','rb')as f:
+# import the ml model
+with open('model.pkl', 'rb') as f:
     model = pickle.load(f)
 
-app=FastAPI()
+app = FastAPI()
 
 tier_1_cities = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata", "Hyderabad", "Pune"]
 tier_2_cities = [
@@ -20,7 +21,7 @@ tier_2_cities = [
     "Kolhapur", "Bilaspur", "Jalandhar", "Noida", "Guntur", "Asansol", "Siliguri"
 ]
 
-
+# pydantic model to validate incoming data
 class UserInput(BaseModel):
 
     age: Annotated[int, Field(..., gt=0, lt=120, description='Age of the user')]
@@ -34,12 +35,12 @@ class UserInput(BaseModel):
     
     @computed_field
     @property
-    def bmi(self)->float:
+    def bmi(self) -> float:
         return self.weight/(self.height**2)
-
+    
     @computed_field
     @property
-    def lifestyle_risk(self)->str:
+    def lifestyle_risk(self) -> str:
         if self.smoker and self.bmi > 30:
             return "high"
         elif self.smoker or self.bmi > 27:
@@ -60,25 +61,48 @@ class UserInput(BaseModel):
     
     @computed_field
     @property
-    def city_tier(self) -> int:
+    def city_tier(self) -> str:
         if self.city in tier_1_cities:
-            return 1
+            return "1"
         elif self.city in tier_2_cities:
-            return 2
+            return "2"
         else:
-            return 3
+            return "3"
+@app.post("/predict")
+def predict_premium(data: UserInput):
 
-
-@app.post('/predict')
-def predict_premium(data:UserInput):
-    input_df=pd.DataFrame([{
-       'bmi': data.bmi,
-        'age_group': data.age_group,
-        'lifestyle_risk': data.lifestyle_risk,
-        'city_tier': data.city_tier,
-        'income_lpa': data.income_lpa,
-        'occupation': data.occupation  
+    input_df = pd.DataFrame([{
+        "bmi": data.bmi,
+        "age_group": data.age_group,
+        "lifestyle_risk": data.lifestyle_risk,
+        "city_tier": data.city_tier,
+        "income_lpa": data.income_lpa,
+        "occupation": data.occupation
     }])
 
-    prediction =model.predict(input_df)[0]
-    return JSONResponse(status_code=200,content={'predicted_category': prediction})
+    print("\nINPUT DATA:")
+    print(input_df)
+
+    print("\nDATA TYPES:")
+    print(input_df.dtypes)
+
+    print("\nCITY TIER VALUE:")
+    print(data.city_tier, type(data.city_tier))
+
+    print("\nMODEL CATEGORIES:")
+    preprocessor = model.named_steps["preprocessor"]
+    encoder = preprocessor.named_transformers_["cat"]
+
+    for column, categories in zip(
+        ["occupation", "age_group", "lifestyle_risk", "city_tier"],
+        encoder.categories_
+    ):
+        print(column, categories, categories.dtype)
+
+    prediction = model.predict(input_df)[0]
+
+    return {
+        "response": {
+            "predicted_category": str(prediction)
+        }
+    }
